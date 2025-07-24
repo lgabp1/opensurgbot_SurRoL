@@ -7,7 +7,7 @@ from lib_threading import Threader
 from deehli.lib.kinevisu.kinevisu import DeehliViz
 from deehli.lib.structs_generic import KinematicsManagerABC, UserInterfaceABC, DriverInterfaceABC, InverseKinematicsDescription
 
-from typing import Optional   
+from typing import Optional, Union
 
 class DeehliNeedlePick(NeedlePick):
     """Hacky way of modifying the NeedlePick task to insert Deehli pipeline."""
@@ -29,7 +29,7 @@ class DeehliNeedlePick(NeedlePick):
         self.psm1.move = self._psm1_move
         self.psm1.move_jaw = self._psm1_move_jaw
     
-    def _psm1_move(self, abs_input: np.ndarray, link_index=None) -> [bool, np.ndarray]:
+    def _psm1_move(self, abs_input: np.ndarray, link_index=None) -> Union[bool, np.ndarray]:
         # === ORIGINAL CODE ===
         assert abs_input.shape == (4, 4)
         if link_index is None:
@@ -39,6 +39,7 @@ class DeehliNeedlePick(NeedlePick):
         # joints_inv = np.array(inverse_kinematics(self.body, self.EEF_LINK_INDEX,
         #                                          pose_world[0], pose_world[1]))
         joints_inv = self.psm1.inverse_kinematics(pose_world, link_index)
+        # return self.psm1.move_joint(joints_inv)
 
         # === CUSTOM CODE ===
         # joints_inv[1] = joints_inv[1] + self.counter * 1e-4 * (-1) ** self.counter  # just for testing, to see the change in joint positions
@@ -53,16 +54,15 @@ class DeehliNeedlePick(NeedlePick):
         # joints_inv[3] : roll
         # joints_inv[4] : pitch
         # joints_inv[5] : center of jaws
-
+        if self.ui or self.pipeline_entry_interface:
+            self.jaw_center = -joints_inv[5]  # center of jaws
         if self.ui:
             self.ui.sliders[0].set_val(np.degrees(joints_inv[3])) # roll
             self.ui.sliders[1].set_val(np.degrees(joints_inv[4])) # pitch
-            self.jaw_center = -joints_inv[5]  # center of jaws
         if self.pipeline_entry_interface:
             jaw_deviation = self.last_ikd.theta_j2 - self.last_ikd.theta_j1
-            new_jaw_center = -joints_inv[5]
-            new_theta_j1 = new_jaw_center - jaw_deviation / 2
-            new_theta_j2 = new_jaw_center + jaw_deviation / 2
+            new_theta_j1 = self.jaw_center - (jaw_deviation / 2)
+            new_theta_j2 = self.jaw_center + (jaw_deviation / 2)
 
             # self.jaw_center = -joints_inv[5]  # center of jaws
             new_fkd = InverseKinematicsDescription(
@@ -119,14 +119,17 @@ if __name__ == "__main__":
         env = DeehliNeedlePick(ui, manager, render_mode='human')  # create one process and corresponding env
 
         while True:
-            print("Starting test...")
-            env.test()
-            print("Test finished !")
-            input("Press Enter to continue...")
+            try:
+                print("Starting test...")
+                env.test()
+                print("Test finished !")
+                input("Press Enter to continue...")
+            except KeyboardInterrupt:
+                print("KeyboardInterrupt received, stopping the test.")
+                break
         env.close()
         time.sleep(2)
 
-            
     if DO_HARDWARE:
         from deehli.lib.deehli import KinematicsManager, DriverInterface
         import logging
@@ -138,10 +141,8 @@ if __name__ == "__main__":
 
     if DO_VIZ:
         ui = DeehliViz()
-        threader = Threader()
-        def _start_surrol_threaded():
-            threader.start_threaded(start_surrol)
-        ui.ext_create_user_button("Start surrol", lambda e: _start_surrol_threaded())
+        threader = Threader()            
+        ui.ext_create_user_button("Start surrol", lambda e: threader.start_threaded(start_surrol))
         ui.run(True)
     if not DO_VIZ:
         start_surrol()
