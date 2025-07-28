@@ -7,7 +7,7 @@ from lib_threading import Threader
 from deehli.lib.kinevisu.kinevisu import DeehliViz
 from deehli.lib.structs_generic import KinematicsManagerABC, UserInterfaceABC, DriverInterfaceABC, InverseKinematicsDescription
 
-from typing import Optional, Union
+from typing import Optional, Tuple
 
 class DeehliNeedlePick(NeedlePick):
     """Hacky way of modifying the NeedlePick task to insert Deehli pipeline."""
@@ -29,7 +29,7 @@ class DeehliNeedlePick(NeedlePick):
         self.psm1.move = self._psm1_move
         self.psm1.move_jaw = self._psm1_move_jaw
     
-    def _psm1_move(self, abs_input: np.ndarray, link_index=None) -> Union[bool, np.ndarray]:
+    def _psm1_move(self, abs_input: np.ndarray, link_index=None) -> Tuple[bool, np.ndarray]:
         # === ORIGINAL CODE ===
         assert abs_input.shape == (4, 4)
         if link_index is None:
@@ -65,15 +65,15 @@ class DeehliNeedlePick(NeedlePick):
             new_theta_j2 = self.jaw_center + (jaw_deviation / 2)
 
             # self.jaw_center = -joints_inv[5]  # center of jaws
-            new_fkd = InverseKinematicsDescription(
+            new_ikd = InverseKinematicsDescription(
                 joints_inv[3],
                 joints_inv[4],
                 new_theta_j1,
                 new_theta_j2,
                 joints_inv[2] / 100.0, # in cm
             )
-            self.last_ikd = new_fkd
-            self.pipeline_entry_interface.inverse_kinematics(new_fkd)
+            self.last_ikd = new_ikd
+            self.pipeline_entry_interface.inverse_kinematics(new_ikd)
         return self.psm1.move_joint(joints_inv)
 
     def _psm1_move_jaw(self, angle_radian: float) -> bool:
@@ -96,15 +96,15 @@ class DeehliNeedlePick(NeedlePick):
             self.ui.sliders[2].set_val(np.degrees(self.jaw_center - angle_radian/2)) # jaw1
             self.ui.sliders[3].set_val(np.degrees(self.jaw_center + angle_radian/2)) # jaw2
         if self.pipeline_entry_interface:
-            new_fkd = InverseKinematicsDescription(
+            new_ikd = InverseKinematicsDescription(
                 self.last_ikd.theta_r,
                 self.last_ikd.theta_p,
                 self.jaw_center - angle_radian/2,
                 self.jaw_center + angle_radian/2,
                 self.last_ikd.lambd,
             )
-            self.last_ikd = new_fkd
-            self.pipeline_entry_interface.inverse_kinematics(new_fkd)
+            self.last_ikd = new_ikd
+            self.pipeline_entry_interface.inverse_kinematics(new_ikd)
 
         return True
 
