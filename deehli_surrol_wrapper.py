@@ -37,7 +37,7 @@ class PipelineDeehli(PipelineGeneric):
     def __init__(self, 
                  serial_port: str,
                  drive_timeout: float = 10.0,
-                 serial_timeout: float = 1.0,
+                 serial_timeout: float = 0.1,
                  serial_wait_time: float = 0.1,
                  logger: Optional[logging.Logger] = None):
         self.logger = logger
@@ -51,8 +51,6 @@ class PipelineDeehli(PipelineGeneric):
             self.logger.info(f"Moving to position: {ikd}")
 
         return self.manager.inverse_kinematics(ikd)
-
-# PipelineInsertDescription = Dict[str, PipelineGeneric] # {'env_psm_name': pipeline} e.g. {'psm1': PipelineDeehli(...), 'psm2': PipelineDeehli(...)}
 
 class DeehliSurRoLWrapper(gym.Env):
     """Hijacks the given SurRoL task (**using PsmEnv**) to insert the Deehli pipeline."""
@@ -114,14 +112,14 @@ class DeehliSurRoLWrapper(gym.Env):
                     # joints_inv[3] : roll
                     # joints_inv[4] : pitch
                     # joints_inv[5] : center of jaws
-                    jaw_center = -joints_inv[5]  # center of jaws
-                    jaw_deviation = self.last_ikds[psm_name].theta_j2 - self.last_ikds[psm_name].theta_j1
-                    new_theta_j1 = jaw_center - (jaw_deviation / 2)
-                    new_theta_j2 = jaw_center + (jaw_deviation / 2)
+                    jaw_center = joints_inv[5]  # center of jaws
+                    jaw_open_angle = self.last_ikds[psm_name].theta_j2 - self.last_ikds[psm_name].theta_j1
+                    new_theta_j1 = jaw_center - (jaw_open_angle / 2)
+                    new_theta_j2 = jaw_center + (jaw_open_angle / 2)
 
                     new_ikd = InverseKinematicsDescription(
                         joints_inv[3],
-                        joints_inv[4],
+                        -joints_inv[4], # Sign correction convention different from kinevizu convention
                         new_theta_j1,
                         new_theta_j2,
                         joints_inv[2] / 100.0, # in cm
@@ -170,23 +168,3 @@ class DeehliSurRoLWrapper(gym.Env):
             return super_result
         
         self.surrol_task.reset = override_reset.__get__(self.surrol_task, PsmEnv)        
-
-if __name__ == '__main__':
-    from surrol.tasks.needle_pick import NeedlePick
-    from surrol.tasks.needle_regrasp_bimanual import NeedleRegrasp
-    surrol_task = NeedlePick(render_mode='human')
-    logger = logging.Logger("", logging.DEBUG)
-    logger.addHandler(logging.StreamHandler()) 
-
-    pipelines: Dict[str, PipelineGeneric] = {} # Pipelines to insert
-    pipelines['psm1'] = PipelineDeehli(serial_port="COM3", logger=logger)  # Override self.psm1's move and move_jaw methods
-
-    deehli_surrol_wrapper = DeehliSurRoLWrapper(surrol_task, pipelines)
-
-    surrol_task.test()
-    surrol_task.close()
-    time.sleep(2)
-
-    # ISSUES TO SOLVE:
-    # 1. Seem to always wait for some timeout (1s between each action)
-    # 2. Issue with move_jaw (closing seems not too work well)
