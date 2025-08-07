@@ -36,6 +36,3 @@ if __name__ == '__main__':
     input("Press Enter to continue...")
     surrol_task.close()
     time.sleep(2)
-
-    # ISSUES TO SOLVE:
-    # 2. Issue with move_jaw (closing seems not too work well)
