@@ -1,19 +1,24 @@
+
+"""
+hijacks a SurRoL task (with minimal copied code) to insert the opensurgbot pipeline.
+"""
+
 import time
 import numpy as np
 
 import pybullet as p
 from surrol.tasks.needle_pick import NeedlePick
 from lib_threading import Threader
-from deehli.lib.kinevisu.kinevisu import DeehliViz
-from deehli.lib.structs_generic import KinematicsManagerABC, UserInterfaceABC, DriverInterfaceABC, InverseKinematicsDescription
+from opensurgbot_pipeline.lib.opensurgbot_kinevizu.kinevisu.kinevisu import OpensurgbotViz 
+from opensurgbot_pipeline.lib.structs_generic import KinematicsManagerABC, UserInterfaceABC, DriverInterfaceABC, InverseKinematicsDescription
 
 from typing import Optional, Tuple
 
-class DeehliNeedlePick(NeedlePick):
-    """Hacky way of modifying the NeedlePick task to insert Deehli pipeline."""
+class OpensurgbotNeedlePick(NeedlePick):
+    """Hacky way of modifying the NeedlePick task to insert opensurgbot pipeline."""
     counter = 0
     
-    def __init__(self, ui: Optional[DeehliViz]=None, pipeline_entry_interface: Optional[KinematicsManagerABC]=None, render_mode=None):
+    def __init__(self, ui: Optional[OpensurgbotViz]=None, pipeline_entry_interface: Optional[KinematicsManagerABC]=None, render_mode=None):
         super().__init__(render_mode=render_mode)
         self._env_setup()
         self.ui = ui
@@ -109,14 +114,14 @@ class DeehliNeedlePick(NeedlePick):
         return True
 
 if __name__ == "__main__":
-    DO_VIZ = False # Whether to use the DeehliViz UI
+    DO_VIZ = False # Whether to use the OpensurgbotViz UI
     DO_HARDWARE = True # Whether to use the hardware interface
 
-    ui = False # Optional DeehliViz instance
+    ui = False # Optional OpensurgbotViz instance
     manager = None # Optional KinematicsManager instance
 
     def start_surrol():
-        env = DeehliNeedlePick(ui, manager, render_mode='human')  # create one process and corresponding env
+        env = OpensurgbotNeedlePick(ui, manager, render_mode='human')  # create one process and corresponding env
 
         while True:
             try:
@@ -131,7 +136,7 @@ if __name__ == "__main__":
         time.sleep(2)
 
     if DO_HARDWARE:
-        from deehli.lib.deehli import KinematicsManager, DriverInterface
+        from opensurgbot_pipeline.lib.opensurgbot_pipeline import KinematicsManager, DriverInterface
         import logging
         logger = logging.Logger("", logging.CRITICAL)
         logger.addHandler(logging.StreamHandler())
@@ -140,7 +145,7 @@ if __name__ == "__main__":
         manager = KinematicsManager([driver1], logger=logger)
 
     if DO_VIZ:
-        ui = DeehliViz()
+        ui = OpensurgbotViz()
         threader = Threader()            
         ui.ext_create_user_button("Start surrol", lambda e: threader.start_threaded(start_surrol))
         ui.run(True)

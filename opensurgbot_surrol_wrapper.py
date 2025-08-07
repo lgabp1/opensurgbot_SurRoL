@@ -1,6 +1,6 @@
 
 """
-Wrap a SurRoL task to insert the Deehli pipeline
+Wrap a SurRoL task to insert the opensurgbot pipeline
 """
 
 import gym
@@ -14,9 +14,9 @@ from typing_extensions import override
 
 from surrol.tasks.psm_env import PsmEnv
 from surrol.robots.psm import Psm
-from deehli.lib.deehli import InverseKinematicsDescription
-# from deehli.lib.kinevisu.kinevisu import DeehliViz
-from deehli.lib.deehli import KinematicsManager, DriverInterface
+from opensurgbot_pipeline.lib.opensurgbot_pipeline import InverseKinematicsDescription
+# from opensurgbot_pipeline.lib.kinevisu.kinevisu import OpensurgbotViz
+from opensurgbot_pipeline.lib.opensurgbot_pipeline import KinematicsManager, DriverInterface
 
 class PipelineGeneric(ABC):
     """Abstract base class for a generic pipeline."""
@@ -32,8 +32,8 @@ class PipelineGeneric(ABC):
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
     
-class PipelineDeehli(PipelineGeneric):
-    """Pipeline for Deehli hardware pipeline."""
+class PipelineOpensurgbot(PipelineGeneric):
+    """Pipeline for Opensurgbot hardware pipeline."""
     def __init__(self, 
                  serial_port: str,
                  drive_timeout: float = 10.0,
@@ -52,17 +52,17 @@ class PipelineDeehli(PipelineGeneric):
 
         return self.manager.inverse_kinematics(ikd)
 
-class DeehliSurRoLWrapper(gym.Env):
-    """Hijacks the given SurRoL task (**using PsmEnv**) to insert the Deehli pipeline."""
+class OpensurgbotSurRoLWrapper(gym.Env):
+    """Hijacks the given SurRoL task (**using PsmEnv**) to insert the Opensurgbot pipeline."""
 
     def __init__(self, surrol_task: PsmEnv, pipelines_to_insert: Dict[str, PipelineGeneric]):
-        """Hijacks the given SurRoL task (**using PsmEnv**) to insert the Deehli pipeline.
+        """Hijacks the given SurRoL task (**using PsmEnv**) to insert the Opensurgbot pipeline.
         
         Args:
             surrol_task (PsmEnv): The SurRoL task to hijack.
             pipelines_to_insert (Dict[str, PipelineGeneric]): A dictionary mapping PSM names to their respective pipelines.
-        
-        Example pipelines_to_insert: {'psm1': PipelineDeehli(...), 'psm2': PipelineDeehli(...)}
+
+        Example pipelines_to_insert: {'psm1': PipelineOpensurgbot(...), 'psm2': PipelineOpensurgbot(...)}
             will override the move and move_jaw methods of self.psm1 and self.psm2 respectively (where self is the SurRoL task).
         """
         self.surrol_task = surrol_task
@@ -168,3 +168,36 @@ class DeehliSurRoLWrapper(gym.Env):
             return super_result
         
         self.surrol_task.reset = override_reset.__get__(self.surrol_task, PsmEnv)        
+
+if __name__ == '__main__':
+    from surrol.tasks.needle_pick import NeedlePick
+    from surrol.tasks.needle_regrasp_bimanual import NeedleRegrasp
+    surrol_task = NeedlePick(render_mode='human')
+    logger = logging.Logger("", logging.DEBUG)
+    logger.addHandler(logging.StreamHandler()) 
+
+    pipelines: Dict[str, PipelineGeneric] = {} # Pipelines to insert
+    pipelines['psm1'] = PipelineOpensurgbot(serial_port="COM3", logger=logger)  # Override self.psm1's move and move_jaw methods
+
+    if False:
+        cangl = 0.0
+        from deehli.lib.deehli import InverseKinematicsDescription
+        while True:
+            inp = input("New jaw angle: \n")
+            if inp.startswith("c"):
+                cangl = float(inp.strip("c"))
+            else:
+                angl = float(inp)
+
+            angl_j1 = cangl - angl / 2
+            angl_j2 = cangl + angl / 2
+            
+            pipelines["psm1"].move_action(InverseKinematicsDescription(0, 0, angl_j1, angl_j2, 0))
+
+    deehli_surrol_wrapper = OpensurgbotSurRoLWrapper(surrol_task, pipelines)
+
+    surrol_task.test()
+    print("Test finished !")
+    input("Press Enter to continue...")
+    surrol_task.close()
+    time.sleep(2)
