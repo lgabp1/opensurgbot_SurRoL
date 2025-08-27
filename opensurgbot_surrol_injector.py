@@ -15,7 +15,6 @@ from typing_extensions import override
 from surrol.tasks.psm_env import PsmEnv
 from surrol.robots.psm import Psm
 from opensurgbot_pipeline.lib.opensurgbot_pipeline import InverseKinematicsDescription
-# from opensurgbot_pipeline.lib.kinevisu.kinevisu import OpensurgbotViz
 from opensurgbot_pipeline.lib.opensurgbot_pipeline import KinematicsManager, DriverInterface
 
 class PipelineGeneric(ABC):
@@ -32,6 +31,13 @@ class PipelineGeneric(ABC):
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
     
+class PipelinePrinter(PipelineGeneric):
+    """Dummy test pipeline, will print a message when arm.move is called."""
+    @override
+    def move_action(self, fkd: InverseKinematicsDescription) -> bool:
+        print(f"Injection successful ! Moving arm to position: {fkd}")
+        return True
+
 class PipelineOpensurgbot(PipelineGeneric):
     """Pipeline for Opensurgbot hardware pipeline."""
     def __init__(self, 
@@ -52,32 +58,35 @@ class PipelineOpensurgbot(PipelineGeneric):
 
         return self.manager.inverse_kinematics(ikd)
 
-class OpensurgbotSurRoLWrapper(gym.Env):
-    """Hijacks the given SurRoL task (**using PsmEnv**) to insert the Opensurgbot pipeline."""
 
-    def __init__(self, surrol_task: PsmEnv, pipelines_to_insert: Dict[str, PipelineGeneric]):
-        """Hijacks the given SurRoL task (**using PsmEnv**) to insert the Opensurgbot pipeline.
-        
+class OpensurgbotSurRoLInjector(gym.Env):
+    """Hijacks the given SurRoL task (**using Psm arms**) to insert the Opensurgbot pipeline. Allows using opensurgbot with any SurRoL task that uses psm arms."""
+
+    def __init__(self, pipelines_to_insert: Dict[str, PipelineGeneric]):
+        """Hijacks the given SurRoL task (**using Psm arms**) to insert the Opensurgbot pipeline.
+
         Args:
-            surrol_task (PsmEnv): The SurRoL task to hijack.
             pipelines_to_insert (Dict[str, PipelineGeneric]): A dictionary mapping PSM names to their respective pipelines.
 
         Example pipelines_to_insert: {'psm1': PipelineOpensurgbot(...), 'psm2': PipelineOpensurgbot(...)}
             will override the move and move_jaw methods of self.psm1 and self.psm2 respectively (where self is the SurRoL task).
         """
-        self.surrol_task = surrol_task
         self.last_ikds: dict[str, InverseKinematicsDescription] = {}
+        self.pipelines_to_insert = pipelines_to_insert
+
+    def inject(self, surrol_task: PsmEnv):
+        """Inject the pipeline into the SurRoL task."""
 
         def override_reset(selfe: PsmEnv):
             """Override the reset method of the SurRoL task to insert the pipelines (note that reset is also called during first init)."""
-            super_result = self.surrol_task.__class__.reset(selfe) # call original reset method
+            super_result = surrol_task.__class__.reset(selfe) # call original reset method
 
             # ==== Insert pipelines upon reset ====
-            for psm_name, pipeline in pipelines_to_insert.items():
+            for psm_name, pipeline in self.pipelines_to_insert.items():
                 if not isinstance(pipeline, PipelineGeneric):
                     raise TypeError(f"Pipeline for {psm_name} must be an instance of PipelineGeneric")
                 
-                if psm_name not in self.surrol_task.__dict__:
+                if psm_name not in surrol_task.__dict__:
                     raise KeyError(f"PSM name {psm_name} not found in SurRoL task's attributes !") 
                 
                 self.last_ikds.clear() # clear last ikds dict
@@ -97,7 +106,7 @@ class OpensurgbotSurRoLWrapper(gym.Env):
                     # joints_inv = np.array(inverse_kinematics(self.body, self.EEF_LINK_INDEX,
                     #                                          pose_world[0], pose_world[1]))
                     joints_inv = selfp.inverse_kinematics(pose_world, link_index)
-                    # return self.psm1.move_joint(joints_inv)
+                    # return self.psm1.move_jaw(joints_inv)
 
                     # === CUSTOM CODE ===
                     # joints_inv[1] = joints_inv[1] + self.counter * 1e-4 * (-1) ** self.counter  # just for testing, to see the change in joint positions
@@ -130,10 +139,10 @@ class OpensurgbotSurRoLWrapper(gym.Env):
                     return selfp.move_joint(joints_inv)
                 
                 # ==================================================================
-                #  Define psm.move_joint override with inserted pipeline
+                #  Define psm.move_jaw override with inserted pipeline
                 # ==================================================================
-                def override_move_joint(selfp: Psm, angle_radian: float) -> bool:
-                    """Override the move_joint method of the PSM to use the pipeline."""
+                def override_move_jaw(selfp: Psm, angle_radian: float) -> bool:
+                    """Override the move_jaw method of the PSM to use the pipeline."""
                     # === ORIGINAL CODE ===
                     angle = angle_radian / 2
                     selfp._jaw_angle = angle
@@ -148,6 +157,7 @@ class OpensurgbotSurRoLWrapper(gym.Env):
 
                     # === CUSTOM CODE ===
                     print(f"Setting jaw angle to {angle_radian} radians")
+                    angle_radian = 0.70 - angle_radian
                     last_ikd = self.last_ikds[psm_name]
                     jaw_center = (last_ikd.theta_j1 + last_ikd.theta_j2) / 2
                     new_ikd = InverseKinematicsDescription(
@@ -163,11 +173,11 @@ class OpensurgbotSurRoLWrapper(gym.Env):
                     return True
                 
                 # === Override the methods ===
-                self.surrol_task.__dict__[psm_name].move = override_move.__get__(self.surrol_task.__dict__[psm_name], Psm)
-                self.surrol_task.__dict__[psm_name].move_jaw = override_move_joint.__get__(self.surrol_task.__dict__[psm_name], Psm)
+                surrol_task.__dict__[psm_name].move = override_move.__get__(surrol_task.__dict__[psm_name], Psm)
+                surrol_task.__dict__[psm_name].move_jaw = override_move_jaw.__get__(surrol_task.__dict__[psm_name], Psm)
             return super_result
         
-        self.surrol_task.reset = override_reset.__get__(self.surrol_task, PsmEnv)        
+        surrol_task.reset = override_reset.__get__(surrol_task, PsmEnv)        
 
 if __name__ == '__main__':
     from surrol.tasks.needle_pick import NeedlePick
@@ -178,26 +188,15 @@ if __name__ == '__main__':
 
     pipelines: Dict[str, PipelineGeneric] = {} # Pipelines to insert
     pipelines['psm1'] = PipelineOpensurgbot(serial_port="COM3", logger=logger)  # Override self.psm1's move and move_jaw methods
+    # pipelines["psm1"] = PipelinePrinter()
 
-    if False:
-        cangl = 0.0
-        from deehli.lib.deehli import InverseKinematicsDescription
-        while True:
-            inp = input("New jaw angle: \n")
-            if inp.startswith("c"):
-                cangl = float(inp.strip("c"))
-            else:
-                angl = float(inp)
-
-            angl_j1 = cangl - angl / 2
-            angl_j2 = cangl + angl / 2
-            
-            pipelines["psm1"].move_action(InverseKinematicsDescription(0, 0, angl_j1, angl_j2, 0))
-
-    deehli_surrol_wrapper = OpensurgbotSurRoLWrapper(surrol_task, pipelines)
+    injector = OpensurgbotSurRoLInjector(pipelines)
+    injector.inject(surrol_task)
 
     surrol_task.test()
     print("Test finished !")
     input("Press Enter to continue...")
     surrol_task.close()
     time.sleep(2)
+
+    

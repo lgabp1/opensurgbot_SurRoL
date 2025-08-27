@@ -14,8 +14,8 @@ python library allowing [SurRoL](https://med-air.github.io/SurRoL/) tasks to dri
 
 The repository currently is quite messy, the most relevant elements are:
 - [opensurgbot_pipeline/](./opensurgbot_pipeline): Contains the opensurgbot pipeline-related definitions.
-- [opensurgbot_surrol_simple_hijack.py](./opensurgbot_surrol_simple_hijack.py): A simple example hack to allow a SurRoL task (here `NeedlePick`) to drive the opensurgbot hardware. See more details below.
-- [opensurgbot_surrol_wrapper.py](./opensurgbot_surrol_wrapper.py): Defines a more complex wrapper (probably harder to maintain) which uses python tricks to hijack any SurRoL task and allow driving multiple opensurgbot hardware setups.
+- [opensurgbot_surrol_direct_injection.py](./opensurgbot_surrol_direct_injection.py): A simple example hack to allow a SurRoL task (here `NeedlePick`) to drive the opensurgbot hardware. See more details below. Basically, a procedure example to directly inject the opensurgbot pipeline into a SurRoL task.
+- [opensurgbot_surrol_injector.py](./opensurgbot_surrol_injector.py): Defines a more complex class (probably harder to maintain) which uses python tricks to allow using the opensurgbot platform with any SurRoL task that uses PSM arms.
 
 ## Integration
 
